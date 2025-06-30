@@ -1,53 +1,105 @@
 # Hate Speech Detection with HateBERT
 
-This project builds upon the research paper introducing HateBERT, which demonstrated improved performance over general language models in hate speech and abusive language detection tasks.
+A project fine-tuning **HateBERT**—a BERT variant pretrained on abusive and hate-speech data—for robust hate speech and offensive language detection.
 
+---
 
-Dataset Used: Hate Speech and Offensive Language Dataset (Not present here but will work for any similar dataset)
+## 📊 Dataset
 
-The dataset consists of 24,783 Twitter posts labeled for hate speech detection.
-Each tweet is classified into three categories:
-Hate Speech (label 0): 1,430 tweets
-Offensive Language (label 1): 19,190 tweets
+**Hate Speech and Offensive Language Dataset**  
+- **Total tweets:** 24,783  
+- **Classes:**  
+  - **0 – Hate Speech:** 1,430 examples  
+  - **1 – Offensive Language:** 19,190 examples  
+  - **2 – Neither:** remainder  
 
-This dataset is used to develop and evaluate models that detect hate speech and offensive language, enhancing the ability to create safer online environments.
+Each record contains:  
+- `tweet` – raw text of the Twitter post  
+- `class` – numeric label (0/1/2)  
 
-Tweet Text: The content of the Twitter post
-Class: The classification label (hate speech, offensive language, or neither).
+---
 
+## 1. Data Preparation
 
-1. Data Preparation:
+1. **Cleaning & Filtering**  
+   - Drop missing or duplicate tweets  
+   - Lowercase, remove URLs, mentions (`@…`), hashtags (`#…`), punctuation & special characters  
 
-Dataset Cleaning: The dataset was preprocessed by removing missing values, cleaning text (removing URLs, mentions, hashtags, special characters, etc.), and converting text to lowercase.
+2. **Label Mapping**  
+   - Standardize into three classes:  
+     `0 = hate_speech`, `1 = offensive_language`, `2 = neither`
 
-Label Mapping: Labels were standardized into three categories: "hate speech," "offensive language," and "neither."
+3. **Data Augmentation**  
+   - Synonym-based augmentation for underrepresented hate speech  
+   - New counts after augmentation:  
+     - Hate Speech → 8,321  
+     - Offensive Language → 19,190  
+     - Neither → 1,430  
+---
 
-Data Augmentation: Synonym-based augmentation was performed for underrepresented hate speech examples to balance class distribution.
+## 2. Model Selection & Tokenization
 
-2. Model Selection and Tokenization:
+- **Encoder:**  
+  - [`HateBERT`][hb] (RoBERTa-base fine-tuned on hate speech data)  
+  - Loaded via Hugging Face `transformers`  
 
-Used HateBERT, a pre-trained BERT model tailored for hate speech detection.
+- **Tokenizer:**  
+  - `AutoTokenizer.from_pretrained("HateBERT")`  
+  - Settings:  
+    - `max_length=128`  
+    - `padding='max_length'`, `truncation=True`  
 
-Tokenized text data using Hugging Face’s AutoTokenizer for compatibility with the BERT model.
+- **Dataset & DataLoader:**  
+  1. Wrap cleaned tweets + labels in a custom `torch.utils.data.Dataset`  
+  2. Tokenize on-the-fly in `__getitem__()`  
+  3. Use `DataLoader(..., batch_size=32, shuffle=True)` for train/val/test  
 
-3. Training Strategy:
+---
 
-Split data into training, validation, and test sets to ensure robust evaluation. Training (20,073 examples), Validation (2,231 examples), and Test (2,479 examples) sets.
+## 3. Training Strategy
 
-Fine-tuned HateBERT with class weights to handle imbalanced data.
+1. **Data Splitting**  
+   - Train / Val / Test:  
+     - **Train:** 20 073 examples  
+     - **Val:**   2 231 examples  
+     - **Test:**  2 479 examples  
+   - Stratified split to preserve class ratios.
 
-Applied weighted loss to mitigate the effects of class imbalance during training.
+2. **Loss & Class Weights**  
+   - Weighted cross-entropy to counter class imbalance  
+   - Class weights inversely proportional to class frequencies.
 
-Defined a custom metric function to calculate accuracy, precision, recall, and F1 score.
+3. **Optimizer & Scheduler**  
+   - AdamW (`lr=2e-5`, `weight_decay=0.01`)  
+   - Linear warm-up over first 10% of steps, then linear decay.
 
-Evaluated the model on the test set both before and after data augmentation.
+4. **Training Loop**  
+   ```python
+   for epoch in range(EPOCHS):
+       train_epoch(model, train_loader)
+       val_metrics = eval_model(model, val_loader)
+       if val_metrics["f1"] > best_f1:
+           save_checkpoint(model)
+- Early stopping on validation F1 plateau (patience=3)
 
+- **Metrics Calculation**  
+  - Accuracy, Precision, Recall, F1‐score  
+  - Report both **macro** and **weighted** averages  
+  - Confusion matrix visualized via `sklearn.metrics.ConfusionMatrixDisplay`
+ 
+## 4. Results
 
-Introduced augmented data to enhance the detection of hate speech (synonym-based augmentation).Hate Speech: 8,321 examplesOffensive Language: 19,190 examples
-Neither: 1,430 examples
-
-Fine-tuned the model further using the augmented dataset and re-evaluated performance.
-
-
-
+- **Baseline (no augmentation)**  
+  - Accuracy: 0.84  
+  - Precision (macro / weighted): 0.65 / 0.87  
+  - Recall    (macro / weighted): 0.71 / 0.84  
+  - F1-score  (macro / weighted): 0.67 / 0.85  
+- **With Synonym-Based Augmentation**  
+  - Accuracy: 0.90  
+  - Precision (macro / weighted): 0.90 / 0.90  
+  - Recall    (macro / weighted): 0.90 / 0.90  
+  - F1-score  (macro / weighted): 0.90 / 0.90  
+- **Visualizations**  
+  - Confusion matrices before / after augmentation  
+  - Comparison bar-chart of Precision / Recall / F1  
 
